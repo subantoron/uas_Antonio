@@ -1,21 +1,18 @@
 import os
 import re
 import time
-from typing import Optional, Tuple, List
 from datetime import datetime
+from typing import Optional, Tuple, List
 
 import numpy as np
 import pandas as pd
 import streamlit as st
-from streamlit_option_menu import option_menu
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 import plotly.express as px
 import plotly.graph_objects as go
-import plotly.figure_factory as ff
-from plotly.subplots import make_subplots
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -23,7 +20,7 @@ import matplotlib.pyplot as plt
 # Modern Styling & Config
 # =========================
 st.set_page_config(
-    page_title="Spotify-Style Music Recommender",
+    page_title="MusicFinder AI - Spotify-Style Recommender",
     page_icon="🎵",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -102,15 +99,28 @@ st.markdown("""
         font-weight: 600 !important;
     }
     
-    .similarity-bar {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        height: 6px;
-        border-radius: 3px;
+    .nav-button {
+        background: #f8f9fa;
+        border: none;
+        padding: 12px 20px;
         margin: 5px 0;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        width: 100%;
+        text-align: left;
+        font-weight: 500;
     }
     
-    .st-emotion-cache-1v0mbdj {
-        border-radius: 10px;
+    .nav-button:hover {
+        background: #667eea;
+        color: white;
+    }
+    
+    .nav-button.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -185,11 +195,17 @@ def load_csv(file_bytes: Optional[bytes], default_path: str) -> pd.DataFrame:
     
     # Create sample data if no file exists
     sample_data = {
-        'title': ['Hati-Hati di Jalan', 'Sang Dewi', 'Tak Ingin Usai', 'Berpisah Itu Mudah', 'Terlukis Indah'],
-        'artist': ['Tulus', 'Lyodra', 'Keisya Levronka', 'Fiersa Besari', 'Rizky Febian'],
-        'emotion': ['happy', 'romantic', 'sad', 'sad', 'romantic'],
-        'genre': ['pop', 'pop', 'pop', 'pop', 'pop'],
-        'lyrics': ['lirik lagu hati-hati di jalan', 'lirik lagu sang dewi', 'tak ingin usai lirik', 'berpisah itu mudah', 'terlukis indah']
+        'title': ['Hati-Hati di Jalan', 'Sang Dewi', 'Tak Ingin Usai', 'Berpisah Itu Mudah', 'Terlukis Indah',
+                  'Runtuh', 'Sial', 'Interaksi', 'Rayuan Perempuan Gila', 'Evaluasi'],
+        'artist': ['Tulus', 'Lyodra', 'Keisya Levronka', 'Fiersa Besari', 'Rizky Febian',
+                   'Feby Putri', 'Mahalini', 'Tulus', 'Nadin Amizah', 'Hindia'],
+        'emotion': ['happy', 'romantic', 'sad', 'sad', 'romantic',
+                    'sad', 'sad', 'romantic', 'emotional', 'reflective'],
+        'genre': ['pop', 'pop', 'pop', 'acoustic', 'pop',
+                  'pop', 'pop', 'jazz', 'acoustic', 'indie'],
+        'lyrics': ['lirik lagu hati-hati di jalan', 'lirik lagu sang dewi', 'tak ingin usai lirik',
+                   'berpisah itu mudah', 'terlukis indah', 'runtuh', 'sial', 'interaksi',
+                   'rayuan perempuan gila', 'evaluasi']
     }
     return pd.DataFrame(sample_data)
 
@@ -197,7 +213,7 @@ def load_csv(file_bytes: Optional[bytes], default_path: str) -> pd.DataFrame:
 def fit_vectorizer_and_matrix(content_series: pd.Series) -> Tuple[TfidfVectorizer, np.ndarray]:
     vectorizer = TfidfVectorizer(
         ngram_range=(1, 2),
-        min_df=2,
+        min_df=1,
         max_df=0.95,
         sublinear_tf=True,
         stop_words=None
@@ -207,10 +223,10 @@ def fit_vectorizer_and_matrix(content_series: pd.Series) -> Tuple[TfidfVectorize
     return vectorizer, sim
 
 @st.cache_resource
-def fit_vectorizer_and_embeddings(content_series: pd.Series) -> Tuple[TfidfVectorizer, "scipy.sparse.csr_matrix"]:
+def fit_vectorizer_and_embeddings(content_series: pd.Series):
     vectorizer = TfidfVectorizer(
         ngram_range=(1, 2),
-        min_df=2,
+        min_df=1,
         max_df=0.95,
         sublinear_tf=True,
         stop_words=None
@@ -229,7 +245,7 @@ def recommend_by_index(df: pd.DataFrame, sim: np.ndarray, idx: int, top_n: int) 
     out["similarity"] = scores
     return out
 
-def recommend_by_query(df: pd.DataFrame, vectorizer: TfidfVectorizer, X, query: str, top_n: int) -> pd.DataFrame:
+def recommend_by_query(df: pd.DataFrame, vectorizer, X, query: str, top_n: int) -> pd.DataFrame:
     q = normalize_text(query)
     qv = vectorizer.transform([q])
     sims = cosine_similarity(qv, X).ravel()
@@ -295,27 +311,35 @@ with st.sidebar:
     <div style="text-align: center; padding: 1rem 0;">
         <h1 style="color: #667eea; margin: 0;">🎵</h1>
         <h3 style="color: #2d3748; margin: 10px 0;">MusicFinder AI</h3>
+        <p style="color: #718096; font-size: 0.9rem;">AI-Powered Music Discovery</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Navigation
-    selected = option_menu(
-        menu_title=None,
-        options=["Discover", "Search", "Analytics", "Settings"],
-        icons=["compass", "search", "bar-chart", "gear"],
-        default_index=0,
-        styles={
-            "container": {"padding": "0!important", "background-color": "#f8f9fa"},
-            "icon": {"color": "#667eea", "font-size": "18px"},
-            "nav-link": {
-                "font-size": "14px",
-                "text-align": "left",
-                "margin": "2px",
-                "--hover-color": "#e9ecef",
-            },
-            "nav-link-selected": {"background-color": "#667eea"},
-        }
-    )
+    st.markdown("---")
+    
+    # Custom Navigation
+    st.markdown("### 🗺️ Navigation")
+    
+    # Initialize session state for page
+    if 'page' not in st.session_state:
+        st.session_state.page = 'Discover'
+    
+    # Navigation buttons
+    pages = [
+        ('🎯 Discover', 'Discover'),
+        ('🔍 Search', 'Search'),
+        ('📊 Analytics', 'Analytics'),
+        ('⚙️ Settings', 'Settings')
+    ]
+    
+    for icon_name, page_name in pages:
+        if st.button(
+            icon_name,
+            key=f"nav_{page_name}",
+            use_container_width=True,
+            type="primary" if st.session_state.page == page_name else "secondary"
+        ):
+            st.session_state.page = page_name
     
     st.markdown("---")
     
@@ -324,12 +348,12 @@ with st.sidebar:
     uploaded = st.file_uploader(
         "Upload your music dataset",
         type=["csv"],
-        help="Upload a CSV file with music data (columns: title, artist, lyrics, emotion, genre)"
+        help="Upload a CSV file with columns: title, artist, lyrics, emotion, genre"
     )
     
     default_path = "indo-song-emot.csv"
     try:
-        df_raw = load_csv(uploaded.getvalue() if uploaded is not None else None, default_path=default_path)
+        df_raw = load_csv(uploaded, default_path=default_path)
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         st.info("Using sample data instead.")
@@ -345,7 +369,7 @@ with st.sidebar:
     with col2:
         st.metric("Columns", len(df_raw.columns))
     
-    # Advanced Settings
+    # Advanced Settings in expander
     with st.expander("⚙️ Advanced Settings"):
         st.markdown("#### Model Settings")
         ngram_range = st.slider("N-gram Range", 1, 3, (1, 2))
@@ -355,11 +379,8 @@ with st.sidebar:
         results_per_page = st.slider("Results per page", 5, 20, 10)
         show_similarity = st.checkbox("Show similarity scores", True)
         
-        st.markdown("#### Spotify Integration")
-        use_spotify = st.checkbox("Enable Spotify links", False)
-        if use_spotify:
-            spotify_client_id = st.text_input("Client ID", type="password")
-            spotify_client_secret = st.text_input("Client Secret", type="password")
+        if st.button("Apply Settings"):
+            st.success("Settings applied!")
 
 # =========================
 # Main Header
@@ -393,12 +414,12 @@ df["_display"] = df[title_col].astype(str) + " • " + df[artist_col].astype(str
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.markdown("""
+    st.markdown(f"""
     <div class="metric-card">
-        <h3 style="margin: 0; font-size: 1.8rem;">{:,}</h3>
+        <h3 style="margin: 0; font-size: 1.8rem;">{len(df):,}</h3>
         <p style="margin: 0; opacity: 0.9;">Total Songs</p>
     </div>
-    """.format(len(df)), unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 with col2:
     unique_artists = df[artist_col].nunique()
@@ -438,10 +459,10 @@ with col4:
 # =========================
 # Main Content Based on Navigation
 # =========================
-if selected == "Discover":
+if st.session_state.page == 'Discover':
     st.markdown("## 🎯 Discover Recommendations")
     
-    tab1, tab2, tab3 = st.tabs(["🎵 By Song", "🔍 By Mood", "📊 Popular"])
+    tab1, tab2 = st.tabs(["🎵 By Song", "🔍 By Mood"])
     
     with tab1:
         col1, col2 = st.columns([2, 1])
@@ -463,7 +484,7 @@ if selected == "Discover":
             if filtered_songs:
                 selected_song = st.selectbox(
                     "Choose a song",
-                    filtered_songs[:50],  # Limit for performance
+                    filtered_songs[:50],
                     key="song_select"
                 )
                 
@@ -618,11 +639,11 @@ if selected == "Discover":
         cols = st.columns(len(quick_moods))
         for idx, mood in enumerate(quick_moods):
             with cols[idx]:
-                if st.button(f"🎵 {mood}", use_container_width=True):
+                if st.button(f"🎵 {mood}", use_container_width=True, key=f"mood_{mood}"):
                     st.session_state.mood_query = mood.lower()
                     st.rerun()
 
-elif selected == "Search":
+elif st.session_state.page == 'Search':
     st.markdown("## 🔍 Advanced Search")
     
     col1, col2 = st.columns([3, 1])
@@ -634,7 +655,7 @@ elif selected == "Search":
         )
     
     with col2:
-        search_limit = st.slider("Max results", 10, 100, 25)
+        search_limit = st.slider("Max results", 10, 100, 25, key="search_limit")
     
     # Advanced filters
     with st.expander("🔧 Advanced Filters"):
@@ -643,25 +664,25 @@ elif selected == "Search":
         with col1:
             if "artist" in df.columns:
                 artists = ["All Artists"] + sorted(df["artist"].dropna().unique().tolist())
-                selected_artist = st.selectbox("Artist", artists)
+                selected_artist = st.selectbox("Artist", artists, key="artist_filter")
             else:
                 selected_artist = None
         
         with col2:
             if "emotion" in df.columns:
                 emotions = ["All Emotions"] + sorted(df["emotion"].dropna().unique().tolist())
-                selected_emotion = st.selectbox("Emotion", emotions)
+                selected_emotion = st.selectbox("Emotion", emotions, key="emotion_filter")
             else:
                 selected_emotion = None
         
         with col3:
             if "genre" in df.columns:
                 genres = ["All Genres"] + sorted(df["genre"].dropna().unique().tolist())
-                selected_genre = st.selectbox("Genre", genres)
+                selected_genre = st.selectbox("Genre", genres, key="genre_filter")
             else:
                 selected_genre = None
     
-    if st.button("Search", type="primary", use_container_width=True):
+    if st.button("Search", type="primary", use_container_width=True, key="search_button"):
         with st.spinner("Searching..."):
             # Apply filters
             filtered_df = df.copy()
@@ -724,7 +745,7 @@ elif selected == "Search":
             else:
                 st.info("No songs found matching your criteria. Try different search terms.")
 
-elif selected == "Analytics":
+elif st.session_state.page == 'Analytics':
     st.markdown("## 📊 Data Analytics")
     
     tab1, tab2, tab3 = st.tabs(["📈 Overview", "🎭 Emotions", "🎨 Genres"])
@@ -791,60 +812,56 @@ elif selected == "Analytics":
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
-                # Emotion over time (if year exists)
-                if "year" in df.columns:
-                    st.markdown("### Emotion Trends")
-                    emotion_by_year = df.groupby(["year", "emotion"]).size().reset_index(name='count')
-                    
-                    fig = px.line(
-                        emotion_by_year,
-                        x="year",
-                        y="count",
-                        color="emotion",
-                        markers=True
+                # Emotion word cloud style visualization
+                st.markdown("### Emotion Composition")
+                
+                # Create a stacked bar chart for emotions
+                if "genre" in df.columns:
+                    emotion_genre = pd.crosstab(df['emotion'], df['genre'])
+                    fig = px.bar(
+                        emotion_genre,
+                        barmode='stack',
+                        color_discrete_sequence=px.colors.qualitative.Set3
                     )
-                    fig.update_layout(height=400)
+                    fig.update_layout(
+                        height=400,
+                        xaxis_title="Emotion",
+                        yaxis_title="Count",
+                        legend_title="Genre"
+                    )
                     st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Emotion data not available in this dataset")
     
     with tab3:
         if "genre" in df.columns:
-            # Genre network visualization
+            # Genre distribution
             st.markdown("### Genre Distribution")
             
             genre_counts = df["genre"].value_counts()
             
             fig = go.Figure(data=[
-                go.Scatter(
-                    x=np.random.rand(len(genre_counts)),
-                    y=np.random.rand(len(genre_counts)),
-                    mode='markers+text',
-                    marker=dict(
-                        size=genre_counts.values * 10 / genre_counts.values.max(),
-                        color=genre_counts.values,
-                        colorscale='Viridis',
-                        showscale=True
-                    ),
-                    text=genre_counts.index,
-                    textposition="top center"
+                go.Pie(
+                    labels=genre_counts.index,
+                    values=genre_counts.values,
+                    hole=.3,
+                    marker_colors=px.colors.qualitative.Set3
                 )
             ])
             fig.update_layout(
                 height=500,
-                showlegend=False,
-                title="Genre Popularity (size = number of songs)"
+                showlegend=True
             )
             st.plotly_chart(fig, use_container_width=True)
 
-elif selected == "Settings":
+elif st.session_state.page == 'Settings':
     st.markdown("## ⚙️ Settings")
     
     with st.form("settings_form"):
         st.markdown("### Display Settings")
         
-        theme = st.selectbox("Theme", ["Light", "Dark"])
-        density = st.selectbox("Density", ["Comfortable", "Compact"])
+        theme = st.selectbox("Theme", ["Light", "Dark", "Auto"])
+        density = st.selectbox("Density", ["Comfortable", "Compact", "Expanded"])
         animations = st.checkbox("Enable animations", True)
         
         st.markdown("### Recommendation Settings")
@@ -855,7 +872,8 @@ elif selected == "Settings":
         auto_refresh = st.checkbox("Auto-refresh data", False)
         cache_duration = st.slider("Cache duration (hours)", 1, 24, 6)
         
-        if st.form_submit_button("Save Settings", type="primary"):
+        submitted = st.form_submit_button("Save Settings", type="primary")
+        if submitted:
             st.success("Settings saved successfully!")
             st.info("Some changes may require a page refresh to take effect.")
 
