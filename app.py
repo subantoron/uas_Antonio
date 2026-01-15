@@ -1,7 +1,5 @@
 import os
 import re
-import time
-from datetime import datetime
 from typing import Optional, Tuple, List
 
 import numpy as np
@@ -11,30 +9,19 @@ import streamlit as st
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-import plotly.express as px
-import plotly.graph_objects as go
-import seaborn as sns
-import matplotlib.pyplot as plt
-
 # =========================
-# Modern Styling & Config
+# Basic Styling & Config
 # =========================
 st.set_page_config(
-    page_title="MusicFinder AI - Spotify-Style Recommender",
+    page_title="MusicFinder AI",
     page_icon="🎵",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern look
+# Simple custom CSS
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    * {
-        font-family: 'Inter', sans-serif;
-    }
-    
     .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 2rem;
@@ -43,43 +30,12 @@ st.markdown("""
         color: white;
     }
     
-    .card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-        margin-bottom: 1.5rem;
-        border-left: 4px solid #667eea;
-        transition: transform 0.3s ease;
-    }
-    
-    .card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.12);
-    }
-    
     .song-card {
-        background: linear-gradient(135deg, #f6f8ff 0%, #f1f4ff 100%);
+        background: #f8f9fa;
         padding: 1rem;
         border-radius: 10px;
         margin: 0.5rem 0;
-        border: 1px solid #e0e6ff;
-    }
-    
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background-color: #f1f3ff;
-        border-radius: 8px 8px 0 0;
-        padding: 10px 20px;
-        font-weight: 500;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background-color: #667eea !important;
-        color: white !important;
+        border-left: 4px solid #667eea;
     }
     
     .metric-card {
@@ -88,51 +44,16 @@ st.markdown("""
         padding: 1.5rem;
         border-radius: 12px;
         text-align: center;
-    }
-    
-    .spotify-button {
-        background: #1DB954 !important;
-        color: white !important;
-        border: none !important;
-        padding: 0.5rem 1rem !important;
-        border-radius: 20px !important;
-        font-weight: 600 !important;
-    }
-    
-    .nav-button {
-        background: #f8f9fa;
-        border: none;
-        padding: 12px 20px;
-        margin: 5px 0;
-        border-radius: 10px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        width: 100%;
-        text-align: left;
-        font-weight: 500;
-    }
-    
-    .nav-button:hover {
-        background: #667eea;
-        color: white;
-    }
-    
-    .nav-button.active {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        margin-bottom: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
-sns.set_style("whitegrid", {'axes.grid': False})
-
 # =========================
 # Utilities
 # =========================
-@st.cache_data
 def normalize_text(s: str) -> str:
-    """Basic Indonesian-friendly normalization."""
+    """Basic normalization."""
     if s is None:
         return ""
     s = str(s).lower()
@@ -141,35 +62,38 @@ def normalize_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
-@st.cache_data
 def pick_first_existing_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     for c in candidates:
         if c in df.columns:
             return c
     return None
 
-@st.cache_data
 def build_content_column(df: pd.DataFrame) -> Tuple[pd.DataFrame, str, str, str]:
     """Create a unified 'content' column for TF-IDF."""
     title_col = pick_first_existing_col(df, ["title", "track_name", "name", "song_title"])
     artist_col = pick_first_existing_col(df, ["artist", "artists", "artist_name", "singer"])
     text_col = pick_first_existing_col(df, ["lyrics_clean", "full", "lyrics", "text", "description", "lyric"])
 
-    if title_col is None or artist_col is None:
-        raise ValueError("Dataset must have title and artist columns.")
+    if title_col is None:
+        title_col = "title"
+        df[title_col] = "Unknown Song"
+    if artist_col is None:
+        artist_col = "artist"
+        df[artist_col] = "Unknown Artist"
 
     if text_col is None:
         df["_text_raw"] = ""
         text_col = "_text_raw"
 
     for c in [title_col, artist_col, text_col]:
-        df[c] = df[c].fillna("").astype(str)
+        if c in df.columns:
+            df[c] = df[c].fillna("").astype(str)
 
     df["_title_norm"] = df[title_col].map(normalize_text)
     df["_artist_norm"] = df[artist_col].map(normalize_text)
     df["_text_norm"] = df[text_col].map(normalize_text)
 
-    extra_cols = [c for c in ["emotion", "genre", "genres", "mood", "category", "tags"] if c in df.columns]
+    extra_cols = [c for c in ["emotion", "genre", "genres", "mood"] if c in df.columns]
     df["_extra_norm"] = ""
     for c in extra_cols:
         df["_extra_norm"] = df["_extra_norm"] + " " + df[c].fillna("").astype(str).map(normalize_text)
@@ -182,57 +106,40 @@ def build_content_column(df: pd.DataFrame) -> Tuple[pd.DataFrame, str, str, str]
         ((" " + df["_extra_norm"]) if extra_cols else "")
     ).astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
 
-    df["word_count"] = df["content"].str.split().str.len()
-    
     return df, title_col, artist_col, text_col
 
 @st.cache_data
 def load_csv(file_bytes: Optional[bytes], default_path: str) -> pd.DataFrame:
     if file_bytes is not None:
-        return pd.read_csv(pd.io.common.BytesIO(file_bytes))
+        try:
+            return pd.read_csv(file_bytes)
+        except:
+            return pd.read_csv(pd.io.common.BytesIO(file_bytes))
+    
     if os.path.exists(default_path):
         return pd.read_csv(default_path)
     
-    # Create sample data if no file exists
+    # Create sample data
     sample_data = {
-        'title': ['Hati-Hati di Jalan', 'Sang Dewi', 'Tak Ingin Usai', 'Berpisah Itu Mudah', 'Terlukis Indah',
-                  'Runtuh', 'Sial', 'Interaksi', 'Rayuan Perempuan Gila', 'Evaluasi'],
-        'artist': ['Tulus', 'Lyodra', 'Keisya Levronka', 'Fiersa Besari', 'Rizky Febian',
-                   'Feby Putri', 'Mahalini', 'Tulus', 'Nadin Amizah', 'Hindia'],
-        'emotion': ['happy', 'romantic', 'sad', 'sad', 'romantic',
-                    'sad', 'sad', 'romantic', 'emotional', 'reflective'],
-        'genre': ['pop', 'pop', 'pop', 'acoustic', 'pop',
-                  'pop', 'pop', 'jazz', 'acoustic', 'indie'],
-        'lyrics': ['lirik lagu hati-hati di jalan', 'lirik lagu sang dewi', 'tak ingin usai lirik',
-                   'berpisah itu mudah', 'terlukis indah', 'runtuh', 'sial', 'interaksi',
-                   'rayuan perempuan gila', 'evaluasi']
+        'title': ['Hati-Hati di Jalan', 'Sang Dewi', 'Tak Ingin Usai', 'Berpisah Itu Mudah', 'Terlukis Indah'],
+        'artist': ['Tulus', 'Lyodra', 'Keisya Levronka', 'Fiersa Besari', 'Rizky Febian'],
+        'emotion': ['happy', 'romantic', 'sad', 'sad', 'romantic'],
+        'genre': ['pop', 'pop', 'pop', 'acoustic', 'pop'],
+        'lyrics': ['lirik lagu hati-hati di jalan', 'lirik lagu sang dewi', 'tak ingin usai', 'berpisah itu mudah', 'terlukis indah']
     }
     return pd.DataFrame(sample_data)
 
 @st.cache_resource
-def fit_vectorizer_and_matrix(content_series: pd.Series) -> Tuple[TfidfVectorizer, np.ndarray]:
+def fit_vectorizer_and_matrix(content_series: pd.Series):
     vectorizer = TfidfVectorizer(
         ngram_range=(1, 2),
         min_df=1,
         max_df=0.95,
-        sublinear_tf=True,
-        stop_words=None
+        sublinear_tf=True
     )
     X = vectorizer.fit_transform(content_series)
     sim = cosine_similarity(X, X)
     return vectorizer, sim
-
-@st.cache_resource
-def fit_vectorizer_and_embeddings(content_series: pd.Series):
-    vectorizer = TfidfVectorizer(
-        ngram_range=(1, 2),
-        min_df=1,
-        max_df=0.95,
-        sublinear_tf=True,
-        stop_words=None
-    )
-    X = vectorizer.fit_transform(content_series)
-    return vectorizer, X
 
 def recommend_by_index(df: pd.DataFrame, sim: np.ndarray, idx: int, top_n: int) -> pd.DataFrame:
     sims = list(enumerate(sim[idx]))
@@ -245,142 +152,53 @@ def recommend_by_index(df: pd.DataFrame, sim: np.ndarray, idx: int, top_n: int) 
     out["similarity"] = scores
     return out
 
-def recommend_by_query(df: pd.DataFrame, vectorizer, X, query: str, top_n: int) -> pd.DataFrame:
-    q = normalize_text(query)
-    qv = vectorizer.transform([q])
-    sims = cosine_similarity(qv, X).ravel()
-    top_idx = np.argsort(-sims)[:top_n]
-    out = df.iloc[top_idx].copy()
-    out["similarity"] = [float(sims[i]) for i in top_idx]
-    return out
-
 def create_song_card(title, artist, similarity=None, emotion=None, genre=None):
-    """Create a modern song card component."""
-    card_html = f"""
+    """Create a simple song card."""
+    if similarity:
+        similarity_text = f" ({similarity:.1%})"
+    else:
+        similarity_text = ""
+    
+    card = f"""
     <div class="song-card">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div style="flex-grow: 1;">
-                <h4 style="margin: 0; color: #2d3748;">{title}</h4>
-                <p style="margin: 5px 0; color: #718096; font-size: 0.9rem;">{artist}</p>
-                <div style="display: flex; gap: 10px; margin-top: 8px;">
+        <h4 style="margin: 0; color: #2d3748;">{title}{similarity_text}</h4>
+        <p style="margin: 5px 0; color: #718096;">{artist}</p>
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
     """
     
     if emotion:
-        card_html += f"""
-        <span style="background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%); 
-                     color: #667eea; padding: 3px 10px; border-radius: 15px; font-size: 0.8rem;">
-            {emotion}
-        </span>
-        """
+        card += f'<span style="background: #667eea20; color: #667eea; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem;">{emotion}</span>'
     
     if genre:
-        card_html += f"""
-        <span style="background: linear-gradient(135deg, #4CAF8020 0%, #2196F320 100%); 
-                     color: #4CAF80; padding: 3px 10px; border-radius: 15px; font-size: 0.8rem;">
-            {genre}
-        </span>
-        """
+        card += f'<span style="background: #4CAF8020; color: #4CAF80; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem;">{genre}</span>'
     
-    if similarity:
-        card_html += f"""
-        <span style="background: linear-gradient(135deg, #FF980020 0%, #FF572220 100%); 
-                     color: #FF5722; padding: 3px 10px; border-radius: 15px; font-size: 0.8rem;">
-            {similarity:.1%}
-        </span>
-        """
-    
-    card_html += """
-                </div>
-            </div>
-            <div style="margin-left: 15px;">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <polygon points="10,8 16,12 10,16" fill="#667eea"></polygon>
-                </svg>
-            </div>
-        </div>
-    </div>
-    """
-    return card_html
+    card += "</div></div>"
+    return card
 
 # =========================
-# Sidebar - Modern Design
+# Sidebar
 # =========================
 with st.sidebar:
-    st.markdown("""
-    <div style="text-align: center; padding: 1rem 0;">
-        <h1 style="color: #667eea; margin: 0;">🎵</h1>
-        <h3 style="color: #2d3748; margin: 10px 0;">MusicFinder AI</h3>
-        <p style="color: #718096; font-size: 0.9rem;">AI-Powered Music Discovery</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
+    st.markdown("## 🎵 MusicFinder AI")
     st.markdown("---")
     
-    # Custom Navigation
-    st.markdown("### 🗺️ Navigation")
+    # File upload
+    uploaded = st.file_uploader("Upload CSV dataset", type=["csv"])
     
-    # Initialize session state for page
-    if 'page' not in st.session_state:
-        st.session_state.page = 'Discover'
-    
-    # Navigation buttons
-    pages = [
-        ('🎯 Discover', 'Discover'),
-        ('🔍 Search', 'Search'),
-        ('📊 Analytics', 'Analytics'),
-        ('⚙️ Settings', 'Settings')
-    ]
-    
-    for icon_name, page_name in pages:
-        if st.button(
-            icon_name,
-            key=f"nav_{page_name}",
-            use_container_width=True,
-            type="primary" if st.session_state.page == page_name else "secondary"
-        ):
-            st.session_state.page = page_name
-    
-    st.markdown("---")
-    
-    # File upload with improved UI
-    st.markdown("### 📁 Data Source")
-    uploaded = st.file_uploader(
-        "Upload your music dataset",
-        type=["csv"],
-        help="Upload a CSV file with columns: title, artist, lyrics, emotion, genre"
+    # Navigation
+    st.markdown("### Navigation")
+    page = st.radio(
+        "Select page:",
+        ["🎯 Discover", "🔍 Search", "📊 Analytics"],
+        label_visibility="collapsed"
     )
     
-    default_path = "indo-song-emot.csv"
+    # Load data
     try:
-        df_raw = load_csv(uploaded, default_path=default_path)
+        df_raw = load_csv(uploaded, "indo-song-emot.csv")
     except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-        st.info("Using sample data instead.")
+        st.error(f"Error loading data: {e}")
         df_raw = load_csv(None, "sample")
-    
-    # Dataset Info Card
-    st.markdown("---")
-    st.markdown("### 📊 Dataset Info")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Songs", f"{len(df_raw):,}")
-    with col2:
-        st.metric("Columns", len(df_raw.columns))
-    
-    # Advanced Settings in expander
-    with st.expander("⚙️ Advanced Settings"):
-        st.markdown("#### Model Settings")
-        ngram_range = st.slider("N-gram Range", 1, 3, (1, 2))
-        min_df = st.slider("Min Document Frequency", 1, 10, 2)
-        
-        st.markdown("#### Display Settings")
-        results_per_page = st.slider("Results per page", 5, 20, 10)
-        show_similarity = st.checkbox("Show similarity scores", True)
-        
-        if st.button("Apply Settings"):
-            st.success("Settings applied!")
 
 # =========================
 # Main Header
@@ -389,7 +207,7 @@ st.markdown("""
 <div class="main-header">
     <h1 style="margin: 0; font-size: 2.5rem;">🎧 MusicFinder AI</h1>
     <p style="margin: 10px 0 0 0; font-size: 1.1rem; opacity: 0.9;">
-        Discover your next favorite song with AI-powered recommendations
+        AI-Powered Music Recommendations
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -399,95 +217,81 @@ st.markdown("""
 # =========================
 df = df_raw.copy()
 
-# Clean and prepare data
-if "title" in df.columns and "artist" in df.columns:
-    df = df.drop_duplicates(subset=["title", "artist"], keep="first")
-else:
-    df = df.drop_duplicates()
-
-df, title_col, artist_col, text_col_used = build_content_column(df)
-
-# Create display columns
-df["_display"] = df[title_col].astype(str) + " • " + df[artist_col].astype(str)
-
-# Quick Stats Cards
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3 style="margin: 0; font-size: 1.8rem;">{len(df):,}</h3>
-        <p style="margin: 0; opacity: 0.9;">Total Songs</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    unique_artists = df[artist_col].nunique()
-    st.markdown(f"""
-    <div class="metric-card" style="background: linear-gradient(135deg, #4CAF80 0%, #2196F3 100%);">
-        <h3 style="margin: 0; font-size: 1.8rem;">{unique_artists:,}</h3>
-        <p style="margin: 0; opacity: 0.9;">Unique Artists</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    if "genre" in df.columns:
-        unique_genres = df["genre"].nunique()
-        st.markdown(f"""
-        <div class="metric-card" style="background: linear-gradient(135deg, #FF9800 0%, #FF5722 100%);">
-            <h3 style="margin: 0; font-size: 1.8rem;">{unique_genres}</h3>
-            <p style="margin: 0; opacity: 0.9;">Genres</p>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="metric-card" style="background: linear-gradient(135deg, #FF9800 0%, #FF5722 100%);">
-            <h3 style="margin: 0; font-size: 1.8rem;">N/A</h3>
-            <p style="margin: 0; opacity: 0.9;">Genres</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-with col4:
-    avg_words = int(df["word_count"].mean()) if "word_count" in df.columns else 0
-    st.markdown(f"""
-    <div class="metric-card" style="background: linear-gradient(135deg, #9C27B0 0%, #673AB7 100%);">
-        <h3 style="margin: 0; font-size: 1.8rem;">{avg_words}</h3>
-        <p style="margin: 0; opacity: 0.9;">Avg Words</p>
-    </div>
-    """, unsafe_allow_html=True)
+if len(df) > 0:
+    try:
+        df, title_col, artist_col, text_col_used = build_content_column(df)
+        df["_display"] = df[title_col].astype(str) + " • " + df[artist_col].astype(str)
+        
+        # Stats cards
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h3 style="margin: 0; font-size: 1.8rem;">{len(df):,}</h3>
+                <p style="margin: 0; opacity: 0.9;">Total Songs</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            unique_artists = df[artist_col].nunique()
+            st.markdown(f"""
+            <div class="metric-card" style="background: linear-gradient(135deg, #4CAF80 0%, #2196F3 100%);">
+                <h3 style="margin: 0; font-size: 1.8rem;">{unique_artists:,}</h3>
+                <p style="margin: 0; opacity: 0.9;">Artists</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            if "genre" in df.columns:
+                unique_genres = df["genre"].nunique()
+                st.markdown(f"""
+                <div class="metric-card" style="background: linear-gradient(135deg, #FF9800 0%, #FF5722 100%);">
+                    <h3 style="margin: 0; font-size: 1.8rem;">{unique_genres}</h3>
+                    <p style="margin: 0; opacity: 0.9;">Genres</p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="metric-card" style="background: linear-gradient(135deg, #FF9800 0%, #FF5722 100%);">
+                    <h3 style="margin: 0; font-size: 1.8rem;">N/A</h3>
+                    <p style="margin: 0; opacity: 0.9;">Genres</p>
+                </div>
+                """, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error processing data: {e}")
+        st.stop()
 
 # =========================
-# Main Content Based on Navigation
+# Main Content
 # =========================
-if st.session_state.page == 'Discover':
+if page == "🎯 Discover":
     st.markdown("## 🎯 Discover Recommendations")
     
-    tab1, tab2 = st.tabs(["🎵 By Song", "🔍 By Mood"])
-    
-    with tab1:
+    if len(df) < 5:
+        st.warning("Not enough songs in the dataset. Please upload a larger dataset.")
+    else:
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.markdown("### Select a Song")
+            # Song selection
             search_term = st.text_input("Search songs...", placeholder="Type song or artist name")
             
-            # Filter songs based on search
             if search_term:
                 search_term_lower = search_term.lower()
                 filtered_songs = df[
-                    df[title_col].str.lower().str.contains(search_term_lower) |
-                    df[artist_col].str.lower().str.contains(search_term_lower)
+                    df[title_col].str.lower().str.contains(search_term_lower, na=False) |
+                    df[artist_col].str.lower().str.contains(search_term_lower, na=False)
                 ]["_display"].tolist()
             else:
                 filtered_songs = df["_display"].tolist()
             
             if filtered_songs:
-                selected_song = st.selectbox(
-                    "Choose a song",
-                    filtered_songs[:50],
-                    key="song_select"
-                )
-                
+                selected_song = st.selectbox("Choose a song", filtered_songs[:50])
+            else:
+                selected_song = None
+            
+            if selected_song:
                 # Get song details
                 song_idx = df.index[df["_display"] == selected_song][0]
                 song_data = df.loc[song_idx]
@@ -500,22 +304,18 @@ if st.session_state.page == 'Discover':
                     emotion=song_data.get("emotion"),
                     genre=song_data.get("genre")
                 ), unsafe_allow_html=True)
-            else:
-                st.warning("No songs found. Try a different search term.")
-                selected_song = None
         
         with col2:
-            st.markdown("### Settings")
+            # Settings
             top_n = st.slider("Number of recommendations", 5, 20, 10)
             
-            # Emotion filter if available
+            # Filters
             if "emotion" in df.columns:
                 emotions = ["All Emotions"] + sorted(df["emotion"].dropna().unique().tolist())
                 selected_emotion = st.selectbox("Filter by emotion", emotions)
             else:
                 selected_emotion = None
             
-            # Genre filter if available
             if "genre" in df.columns:
                 genres = ["All Genres"] + sorted(df["genre"].dropna().unique().tolist())
                 selected_genre = st.selectbox("Filter by genre", genres)
@@ -523,9 +323,9 @@ if st.session_state.page == 'Discover':
                 selected_genre = None
         
         # Generate recommendations
-        if selected_song and st.button("🎯 Get Recommendations", type="primary", use_container_width=True):
+        if selected_song and st.button("Get Recommendations", type="primary", use_container_width=True):
             with st.spinner("Finding similar songs..."):
-                # Filter dataset based on selections
+                # Filter dataset
                 df_filtered = df.copy()
                 if selected_emotion and selected_emotion != "All Emotions":
                     df_filtered = df_filtered[df_filtered["emotion"] == selected_emotion]
@@ -533,360 +333,121 @@ if st.session_state.page == 'Discover':
                     df_filtered = df_filtered[df_filtered["genre"] == selected_genre]
                 
                 if len(df_filtered) < 2:
-                    st.error("Not enough songs in the filtered dataset. Try different filters.")
+                    st.error("Not enough songs with the selected filters.")
                 else:
-                    # Fit model on filtered data
+                    # Fit model and get recommendations
                     vectorizer, sim = fit_vectorizer_and_matrix(df_filtered["content"])
                     
-                    # Find index in filtered dataframe
                     if selected_song in df_filtered["_display"].values:
                         idx = df_filtered.index[df_filtered["_display"] == selected_song][0]
                         pos = df_filtered.reset_index(drop=False).index[
                             df_filtered.reset_index(drop=False)["index"] == idx][0]
                         
-                        # Get recommendations
                         recs = recommend_by_index(df_filtered.reset_index(drop=True), sim, pos, top_n)
                         
                         # Display results
                         st.markdown(f"### 🎵 Recommended Songs ({len(recs)} found)")
                         
-                        # Sort by similarity
-                        recs = recs.sort_values("similarity", ascending=False)
-                        
-                        # Create columns for grid layout
-                        cols = st.columns(2)
-                        for i, (_, row) in enumerate(recs.iterrows()):
-                            with cols[i % 2]:
-                                st.markdown(create_song_card(
-                                    row[title_col],
-                                    row[artist_col],
-                                    similarity=row.get("similarity"),
-                                    emotion=row.get("emotion"),
-                                    genre=row.get("genre")
-                                ), unsafe_allow_html=True)
-                        
-                        # Similarity distribution chart
-                        if len(recs) > 1:
-                            fig = go.Figure(data=[
-                                go.Bar(
-                                    x=recs["similarity"],
-                                    y=recs[title_col].str[:30] + "...",
-                                    orientation='h',
-                                    marker=dict(
-                                        color=recs["similarity"],
-                                        colorscale='Viridis',
-                                        showscale=True
-                                    ),
-                                    text=[f"{x:.1%}" for x in recs["similarity"]],
-                                    textposition='outside'
-                                )
-                            ])
-                            fig.update_layout(
-                                title="Similarity Scores",
-                                xaxis_title="Similarity",
-                                yaxis_title="Song",
-                                height=400,
-                                showlegend=False
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-    
-    with tab2:
-        st.markdown("### 🔍 Find Songs by Mood/Theme")
-        
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            mood_query = st.text_area(
-                "Describe what you're looking for:",
-                placeholder="Example: songs for studying, breakup songs, happy upbeat music, romantic ballads...",
-                height=100
-            )
-        
-        with col2:
-            top_n_mood = st.number_input("Results", min_value=5, max_value=30, value=10)
-            search_button = st.button("Search", type="primary", use_container_width=True)
-        
-        if search_button and mood_query:
-            with st.spinner("Searching for matching songs..."):
-                vectorizer_q, X = fit_vectorizer_and_embeddings(df["content"])
-                recs_q = recommend_by_query(df, vectorizer_q, X, mood_query, top_n_mood)
-                
-                st.markdown(f"### Found {len(recs_q)} songs matching '{mood_query}'")
-                
-                # Display results in a nice grid
-                num_cols = 2
-                rows = (len(recs_q) + num_cols - 1) // num_cols
-                
-                for i in range(rows):
-                    cols = st.columns(num_cols)
-                    for j in range(num_cols):
-                        idx = i * num_cols + j
-                        if idx < len(recs_q):
-                            with cols[j]:
-                                row = recs_q.iloc[idx]
-                                st.markdown(create_song_card(
-                                    row[title_col],
-                                    row[artist_col],
-                                    similarity=row.get("similarity"),
-                                    emotion=row.get("emotion"),
-                                    genre=row.get("genre")
-                                ), unsafe_allow_html=True)
-        
-        # Quick mood buttons
-        st.markdown("### Quick Mood Filters")
-        quick_moods = ["Happy", "Sad", "Romantic", "Energetic", "Chill", "Motivational"]
-        
-        cols = st.columns(len(quick_moods))
-        for idx, mood in enumerate(quick_moods):
-            with cols[idx]:
-                if st.button(f"🎵 {mood}", use_container_width=True, key=f"mood_{mood}"):
-                    st.session_state.mood_query = mood.lower()
-                    st.rerun()
+                        for _, row in recs.iterrows():
+                            st.markdown(create_song_card(
+                                row[title_col],
+                                row[artist_col],
+                                similarity=row.get("similarity"),
+                                emotion=row.get("emotion"),
+                                genre=row.get("genre")
+                            ), unsafe_allow_html=True)
 
-elif st.session_state.page == 'Search':
-    st.markdown("## 🔍 Advanced Search")
+elif page == "🔍 Search":
+    st.markdown("## 🔍 Search Songs")
     
     col1, col2 = st.columns([3, 1])
     
     with col1:
         search_query = st.text_input(
-            "Search across all song data:",
-            placeholder="Search by title, artist, lyrics, emotion, or genre..."
+            "Search:",
+            placeholder="Search by title, artist, or lyrics..."
         )
     
     with col2:
-        search_limit = st.slider("Max results", 10, 100, 25, key="search_limit")
+        search_limit = st.slider("Max results", 10, 50, 20)
     
-    # Advanced filters
-    with st.expander("🔧 Advanced Filters"):
-        col1, col2, col3 = st.columns(3)
+    if search_query:
+        # Simple search
+        search_lower = search_query.lower()
         
-        with col1:
-            if "artist" in df.columns:
-                artists = ["All Artists"] + sorted(df["artist"].dropna().unique().tolist())
-                selected_artist = st.selectbox("Artist", artists, key="artist_filter")
-            else:
-                selected_artist = None
+        mask = (
+            df[title_col].str.lower().str.contains(search_lower, na=False) |
+            df[artist_col].str.lower().str.contains(search_lower, na=False)
+        )
         
-        with col2:
-            if "emotion" in df.columns:
-                emotions = ["All Emotions"] + sorted(df["emotion"].dropna().unique().tolist())
-                selected_emotion = st.selectbox("Emotion", emotions, key="emotion_filter")
-            else:
-                selected_emotion = None
+        if "content" in df.columns:
+            mask = mask | df["content"].str.lower().str.contains(search_lower, na=False)
         
-        with col3:
-            if "genre" in df.columns:
-                genres = ["All Genres"] + sorted(df["genre"].dropna().unique().tolist())
-                selected_genre = st.selectbox("Genre", genres, key="genre_filter")
-            else:
-                selected_genre = None
-    
-    if st.button("Search", type="primary", use_container_width=True, key="search_button"):
-        with st.spinner("Searching..."):
-            # Apply filters
-            filtered_df = df.copy()
-            
-            if search_query:
-                search_lower = search_query.lower()
-                mask = (
-                    filtered_df[title_col].str.lower().str.contains(search_lower) |
-                    filtered_df[artist_col].str.lower().str.contains(search_lower) |
-                    filtered_df["content"].str.lower().str.contains(search_lower)
-                )
-                if "emotion" in filtered_df.columns:
-                    mask = mask | filtered_df["emotion"].str.lower().str.contains(search_lower)
-                if "genre" in filtered_df.columns:
-                    mask = mask | filtered_df["genre"].str.lower().str.contains(search_lower)
-                filtered_df = filtered_df[mask]
-            
-            if selected_artist and selected_artist != "All Artists":
-                filtered_df = filtered_df[filtered_df["artist"] == selected_artist]
-            
-            if selected_emotion and selected_emotion != "All Emotions":
-                filtered_df = filtered_df[filtered_df["emotion"] == selected_emotion]
-            
-            if selected_genre and selected_genre != "All Genres":
-                filtered_df = filtered_df[filtered_df["genre"] == selected_genre]
-            
+        if "emotion" in df.columns:
+            mask = mask | df["emotion"].str.lower().str.contains(search_lower, na=False)
+        
+        if "genre" in df.columns:
+            mask = mask | df["genre"].str.lower().str.contains(search_lower, na=False)
+        
+        filtered_df = df[mask]
+        
+        st.markdown(f"### Found {len(filtered_df)} songs")
+        
+        if not filtered_df.empty:
             # Display results
-            st.markdown(f"### 📊 Found {len(filtered_df)} songs")
-            
-            if not filtered_df.empty:
-                # Convert to display format
-                display_df = filtered_df.copy()
-                if title_col in display_df.columns and artist_col in display_df.columns:
-                    display_df["Song"] = display_df[title_col] + " • " + display_df[artist_col]
-                
-                # Select columns to show
-                show_cols = ["Song"]
-                if "emotion" in display_df.columns:
-                    show_cols.append("emotion")
-                if "genre" in display_df.columns:
-                    show_cols.append("genre")
-                if "word_count" in display_df.columns:
-                    show_cols.append("word_count")
-                
-                # Display as dataframe
-                st.dataframe(
-                    display_df[show_cols].head(search_limit),
-                    use_container_width=True,
-                    height=400
-                )
-                
-                # Download button
-                csv = filtered_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Results (CSV)",
-                    data=csv,
-                    file_name=f"music_search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("No songs found matching your criteria. Try different search terms.")
+            for _, row in filtered_df.head(search_limit).iterrows():
+                st.markdown(create_song_card(
+                    row[title_col],
+                    row[artist_col],
+                    emotion=row.get("emotion"),
+                    genre=row.get("genre")
+                ), unsafe_allow_html=True)
+        else:
+            st.info("No songs found. Try a different search term.")
 
-elif st.session_state.page == 'Analytics':
-    st.markdown("## 📊 Data Analytics")
+elif page == "📊 Analytics":
+    st.markdown("## 📊 Dataset Analytics")
     
-    tab1, tab2, tab3 = st.tabs(["📈 Overview", "🎭 Emotions", "🎨 Genres"])
+    col1, col2 = st.columns(2)
     
-    with tab1:
-        col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("### Song Distribution")
         
-        with col1:
-            # Top artists chart
-            st.markdown("### Top 10 Artists")
+        # Artist distribution
+        if artist_col in df.columns:
             top_artists = df[artist_col].value_counts().head(10)
             
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=top_artists.values,
-                    y=top_artists.index,
-                    orientation='h',
-                    marker_color='#667eea'
-                )
-            ])
-            fig.update_layout(
-                height=400,
-                showlegend=False,
-                xaxis_title="Number of Songs",
-                yaxis_title="Artist"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Word count distribution
-            st.markdown("### Lyrics Length Distribution")
-            if "word_count" in df.columns:
-                fig = px.histogram(
-                    df, 
-                    x="word_count",
-                    nbins=30,
-                    color_discrete_sequence=['#764ba2']
-                )
-                fig.update_layout(
-                    height=400,
-                    xaxis_title="Word Count",
-                    yaxis_title="Number of Songs"
-                )
-                st.plotly_chart(fig, use_container_width=True)
+            if len(top_artists) > 0:
+                st.bar_chart(top_artists)
             else:
-                st.info("Word count data not available")
+                st.info("Not enough artist data")
+        
+        # Word count if available
+        if "content" in df.columns:
+            df["word_count"] = df["content"].str.split().str.len()
+            avg_words = df["word_count"].mean()
+            st.metric("Average words per song", f"{avg_words:.0f}")
     
-    with tab2:
+    with col2:
+        st.markdown("### Dataset Info")
+        
+        # Basic info
+        st.write(f"**Total songs:** {len(df)}")
+        if artist_col in df.columns:
+            st.write(f"**Unique artists:** {df[artist_col].nunique()}")
+        
         if "emotion" in df.columns:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Emotion distribution
-                st.markdown("### Emotion Distribution")
-                emotion_counts = df["emotion"].value_counts()
-                
-                fig = px.pie(
-                    values=emotion_counts.values,
-                    names=emotion_counts.index,
-                    color_discrete_sequence=px.colors.qualitative.Set3
-                )
-                fig.update_traces(textposition='inside', textinfo='percent+label')
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                # Emotion word cloud style visualization
-                st.markdown("### Emotion Composition")
-                
-                # Create a stacked bar chart for emotions
-                if "genre" in df.columns:
-                    emotion_genre = pd.crosstab(df['emotion'], df['genre'])
-                    fig = px.bar(
-                        emotion_genre,
-                        barmode='stack',
-                        color_discrete_sequence=px.colors.qualitative.Set3
-                    )
-                    fig.update_layout(
-                        height=400,
-                        xaxis_title="Emotion",
-                        yaxis_title="Count",
-                        legend_title="Genre"
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Emotion data not available in this dataset")
-    
-    with tab3:
+            emotion_counts = df["emotion"].value_counts()
+            st.write("**Emotion distribution:**")
+            for emotion, count in emotion_counts.items():
+                st.write(f"  • {emotion}: {count}")
+        
         if "genre" in df.columns:
-            # Genre distribution
-            st.markdown("### Genre Distribution")
-            
             genre_counts = df["genre"].value_counts()
-            
-            fig = go.Figure(data=[
-                go.Pie(
-                    labels=genre_counts.index,
-                    values=genre_counts.values,
-                    hole=.3,
-                    marker_colors=px.colors.qualitative.Set3
-                )
-            ])
-            fig.update_layout(
-                height=500,
-                showlegend=True
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            st.write("**Genre distribution:**")
+            for genre, count in genre_counts.head(5).items():
+                st.write(f"  • {genre}: {count}")
 
-elif st.session_state.page == 'Settings':
-    st.markdown("## ⚙️ Settings")
-    
-    with st.form("settings_form"):
-        st.markdown("### Display Settings")
-        
-        theme = st.selectbox("Theme", ["Light", "Dark", "Auto"])
-        density = st.selectbox("Density", ["Comfortable", "Compact", "Expanded"])
-        animations = st.checkbox("Enable animations", True)
-        
-        st.markdown("### Recommendation Settings")
-        default_rec_count = st.slider("Default recommendations count", 5, 20, 10)
-        show_explanations = st.checkbox("Show explanation for recommendations", True)
-        
-        st.markdown("### Data Settings")
-        auto_refresh = st.checkbox("Auto-refresh data", False)
-        cache_duration = st.slider("Cache duration (hours)", 1, 24, 6)
-        
-        submitted = st.form_submit_button("Save Settings", type="primary")
-        if submitted:
-            st.success("Settings saved successfully!")
-            st.info("Some changes may require a page refresh to take effect.")
-
-# =========================
 # Footer
-# =========================
 st.markdown("---")
-col1, col2, col3 = st.columns([1, 2, 1])
-
-with col2:
-    st.markdown("""
-    <div style="text-align: center; color: #718096; padding: 1rem;">
-        <p>🎵 MusicFinder AI • Powered by TF-IDF & Cosine Similarity</p>
-        <p style="font-size: 0.9rem;">© 2024 • Discover your perfect soundtrack</p>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown("🎵 **MusicFinder AI** • Powered by TF-IDF & Cosine Similarity")
